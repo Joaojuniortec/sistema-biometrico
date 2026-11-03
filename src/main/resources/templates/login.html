@@ -1,0 +1,311 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Sistema Biométrico - Login</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #eef2f5;
+            font-family: Arial, sans-serif;
+            color: #1f2937;
+        }
+
+        .login-container {
+            width: 100%;
+            max-width: 430px;
+            margin: 20px;
+            padding: 28px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.10);
+        }
+
+        h1 {
+            font-size: 25px;
+            text-align: center;
+            color: #14532d;
+        }
+
+        h2, h3 {
+            text-align: center;
+        }
+
+        h2 {
+            font-size: 19px;
+        }
+
+        .camera-box {
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        video {
+            display: block;
+            width: 100%;
+            max-height: 280px;
+            background: #111827;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        .status {
+            font-size: 14px;
+            margin: 12px 0;
+            line-height: 1.5;
+            text-align: center;
+        }
+
+        label {
+            display: block;
+            margin: 14px 0 6px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+
+        button {
+            width: 100%;
+            margin-top: 12px;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            background: #166534;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #14532d;
+        }
+
+        button:disabled {
+            background: #64748b;
+            cursor: wait;
+        }
+
+        .aviso {
+            color: #475569;
+            font-size: 13px;
+            line-height: 1.5;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <main class="login-container">
+
+        <h1>Sistema de Segurança Ambiental</h1>
+        <h2>Acesso ao sistema</h2>
+
+        <section class="camera-box">
+            <h3>Verificação facial</h3>
+
+            <video id="camera" autoplay playsinline muted></video>
+
+            <p id="statusCamera" class="status">
+                Clique abaixo para iniciar a câmera.
+            </p>
+
+            <button type="button" id="ativarCamera">
+                Ativar câmera e detector facial
+            </button>
+        </section>
+
+        <form action="/login" method="post">
+
+            <input type="hidden"
+                   th:name="${_csrf.parameterName}"
+                   th:value="${_csrf.token}">
+
+            <label for="username">Usuário:</label>
+            <input type="text"
+                   id="username"
+                   name="username"
+                   autocomplete="username"
+                   required>
+
+            <label for="password">Senha:</label>
+            <input type="password"
+                   id="password"
+                   name="password"
+                   autocomplete="current-password"
+                   required>
+
+            <button type="submit">Entrar</button>
+        </form>
+
+        <p class="aviso">
+            A detecção facial está em fase de testes.
+            Detectar um rosto não confirma a identidade do usuário
+            nem substitui a autenticação.
+        </p>
+
+    </main>
+
+    <script type="module">
+        const camera = document.getElementById("camera");
+        const statusCamera = document.getElementById("statusCamera");
+        const botaoCamera = document.getElementById("ativarCamera");
+
+        let fluxoCamera = null;
+        let detectorFacial = null;
+        let verificando = false;
+        let animacaoId = null;
+
+        botaoCamera.addEventListener("click", iniciarDetector);
+
+        async function iniciarDetector() {
+            botaoCamera.disabled = true;
+
+            try {
+                statusCamera.textContent = "Preparando a câmera...";
+
+                if (!navigator.mediaDevices ||
+                    !navigator.mediaDevices.getUserMedia) {
+                    throw new Error(
+                        "O navegador não disponibilizou acesso à câmera."
+                    );
+                }
+
+                if (!fluxoCamera) {
+                    fluxoCamera =
+                        await navigator.mediaDevices.getUserMedia({
+                            video: true,
+                            audio: false
+                        });
+
+                    camera.srcObject = fluxoCamera;
+                }
+
+                await camera.play();
+
+                statusCamera.textContent =
+                    "Carregando biblioteca MediaPipe...";
+
+                const { FaceDetector, FilesetResolver } =
+                    await import(
+                        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm"
+                    );
+
+                const vision = await FilesetResolver.forVisionTasks(
+                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+                );
+
+                statusCamera.textContent =
+                    "Carregando modelo de detecção facial...";
+
+                detectorFacial =
+                    await FaceDetector.createFromOptions(
+                        vision,
+                        {
+                            baseOptions: {
+                                modelAssetPath:
+                                    "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+                                delegate: "CPU"
+                            },
+                            runningMode: "VIDEO"
+                        }
+                    );
+
+                verificando = true;
+                botaoCamera.textContent = "Detector facial ativo";
+                statusCamera.textContent =
+                    "Detector carregado. Procurando um rosto...";
+
+                botaoCamera.disabled = false;
+                detectarRosto();
+
+            } catch (erro) {
+                console.error("Erro no detector facial:", erro);
+
+                statusCamera.textContent =
+                    "Não foi possível carregar o detector. " +
+                    "Verifique a internet e consulte o Console do Chrome.";
+
+                botaoCamera.textContent = "Tentar novamente";
+                botaoCamera.disabled = false;
+
+                if (detectorFacial) {
+                    detectorFacial.close();
+                    detectorFacial = null;
+                }
+
+                verificando = false;
+            }
+        }
+
+        function detectarRosto() {
+            if (!verificando || !detectorFacial) {
+                return;
+            }
+
+            if (camera.readyState >= 2) {
+                try {
+                    const resultado =
+                        detectorFacial.detectForVideo(
+                            camera,
+                            performance.now()
+                        );
+
+                    if (resultado.detections.length > 0) {
+                        statusCamera.textContent =
+                            "Rosto detectado! Identidade não verificada.";
+                    } else {
+                        statusCamera.textContent =
+                            "Nenhum rosto detectado. Olhe para a câmera.";
+                    }
+
+                } catch (erro) {
+                    console.error("Erro durante a detecção:", erro);
+
+                    statusCamera.textContent =
+                        "Ocorreu um erro durante a detecção facial.";
+
+                    verificando = false;
+                    return;
+                }
+            }
+
+            animacaoId = requestAnimationFrame(detectarRosto);
+        }
+
+        window.addEventListener("beforeunload", () => {
+            verificando = false;
+
+            if (animacaoId !== null) {
+                cancelAnimationFrame(animacaoId);
+            }
+
+            if (fluxoCamera) {
+                fluxoCamera.getTracks().forEach(
+                    track => track.stop()
+                );
+            }
+
+            if (detectorFacial) {
+                detectorFacial.close();
+            }
+        });
+    </script>
+</body>
+</html>
