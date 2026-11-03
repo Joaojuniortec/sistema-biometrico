@@ -49,3 +49,6 @@ application-local.yml
 
 # Configuração local do banco
 src/main/resources/application.properties
+
+# Fotografias utilizadas nos testes biométricos
+imagens-teste/
